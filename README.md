@@ -7,7 +7,7 @@ embedded API while RocheDB keeps placement, ring metadata, retrieval planning,
 and ID generation inside the database core.
 
 Current driver version: `v0.1.0`.
-Tested against RocheDB core `v0.2.4`.
+Tested against RocheDB core `v0.2.5+`.
 
 ## Install
 
@@ -58,6 +58,8 @@ let db = RocheDb::open_default()?;
 db.set_galaxy_description("Product and support knowledge")?;
 db.set_ring_description("docs", "Documentation ring")?;
 let id = db.put_vec("docs", br#"{"title":"hello"}"#, &[1.0, 0.0])?;
+let roundtrip_id = id.to_string().parse::<rochedb::RocheId>()?;
+assert_eq!(roundtrip_id, id);
 let value = db.get_string(id)?.unwrap();
 let selected = db.query_string(id, "{ title }")?;
 let results = db.retrieve_with(
@@ -83,16 +85,17 @@ ROCHEDB_CORE_DIR=/path/to/rochedb cargo run --example embedded
 | Writes | `put`, `put_str`, `put_json`, `put_vec` |
 | Reads | `get`, `get_string`, `batch_get` |
 | Projection | `query`, `query_string` |
-| Retrieval | `retrieve`, `retrieve_with`, `RetrieveOptions` |
+| Retrieval | `retrieve`, `retrieve_with`, `RetrieveOptions`, `RetrieveResult::first`, `payloads`, `payload_strings` |
 | Atlas | `atlas` |
 | Ring / galaxy metadata | `configure_ring`, `set_galaxy_description`, `set_ring_description` |
 | Orbit helpers | `now`, `advance`, `locate`, `next_visit`, `next_join` |
-| Error handling | `Result<T, rochedb::Error>` |
+| IDs | `RocheId`, `Display`, `FromStr`, `RocheId::parse` |
+| Error handling | `Result<T, rochedb::Error>`, `ErrorKind` |
 
 Still pending:
 
 - transaction API;
-- update / patch / delete / list / count APIs;
+- update / patch / delete / list / count APIs, pending C ABI support;
 - dump / import / backup / restore APIs;
 - metrics / universe sync / recovery APIs;
 - native TCP driver with timeout/retry/pooling.
