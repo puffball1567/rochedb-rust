@@ -6,6 +6,7 @@ on:
 
 jobs:
   test:
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -26,10 +27,15 @@ jobs:
           repository: puffball1567/rochedb
           path: rochedb-core
 
-      - name: Install Nim
+      - name: Install Nim on Linux
+        if: runner.os == 'Linux'
         uses: jiro4989/setup-nim-action@v2
         with:
           nim-version: "2.2.10"
+
+      - name: Install Nim on macOS
+        if: runner.os == 'macOS'
+        run: brew install nim
 
       - name: Install libsodium on Linux
         if: runner.os == 'Linux'
