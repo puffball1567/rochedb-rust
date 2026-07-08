@@ -4,6 +4,7 @@ use std::fmt;
 use std::os::raw::{c_char, c_double, c_float, c_int, c_void};
 use std::ptr;
 use std::slice;
+use std::str::FromStr;
 use std::sync::Once;
 
 pub const ROCHE_ABI_VERSION: i32 = 1;
@@ -34,6 +35,10 @@ impl RocheId {
     pub fn is_empty(&self) -> bool {
         self.parent == 0 && self.epoch == 0 && self.seq == 0 && self.t_write == 0.0
     }
+
+    pub fn parse(value: &str) -> Result<Self, Error> {
+        value.parse()
+    }
 }
 
 impl fmt::Display for RocheId {
@@ -43,6 +48,25 @@ impl fmt::Display for RocheId {
             "{}:{}:{}:{}",
             self.parent, self.epoch, self.seq, self.t_write
         )
+    }
+}
+
+impl FromStr for RocheId {
+    type Err = Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let mut parts = value.split(':');
+        let parent = parse_id_part::<u64>(&mut parts, "parent")?;
+        let epoch = parse_id_part::<u32>(&mut parts, "epoch")?;
+        let seq = parse_id_part::<u32>(&mut parts, "seq")?;
+        let t_write = parse_id_part::<f64>(&mut parts, "t_write")?;
+        if parts.next().is_some() {
+            return Err(Error::new(
+                ErrorKind::InvalidId,
+                format!("invalid RocheDB id '{}': too many fields", value),
+            ));
+        }
+        Ok(Self::new(parent, epoch, seq, t_write))
     }
 }
 
@@ -159,29 +183,51 @@ extern "C" {
     fn roche_next_join(db: *mut c_void, a: RocheId, b: RocheId) -> c_double;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErrorKind {
+    Abi,
+    AbiVersionMismatch,
+    InvalidId,
+    NotFound,
+    NulByte,
+    Utf8,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
+    kind: ErrorKind,
     message: String,
 }
 
 impl Error {
-    fn new(message: impl Into<String>) -> Self {
+    fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
         Self {
+            kind,
             message: message.into(),
         }
+    }
+
+    pub fn kind(&self) -> ErrorKind {
+        self.kind
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
     }
 
     fn last() -> Self {
         unsafe {
             let p = roche_last_error();
             if p.is_null() {
-                return Self::new("RocheDB C ABI error");
+                return Self::new(ErrorKind::Abi, "RocheDB C ABI error");
             }
             let s = CStr::from_ptr(p).to_string_lossy();
             if s.is_empty() {
-                Self::new("RocheDB C ABI error")
+                Self::new(ErrorKind::Abi, "RocheDB C ABI error")
             } else {
-                Self::new(s.into_owned())
+                let message = s.into_owned();
+                let kind = classify_abi_error(&message);
+                Self::new(kind, message)
             }
         }
     }
@@ -197,7 +243,7 @@ impl StdError for Error {}
 
 impl From<NulError> for Error {
     fn from(value: NulError) -> Self {
-        Self::new(value.to_string())
+        Self::new(ErrorKind::NulByte, value.to_string())
     }
 }
 
@@ -210,7 +256,7 @@ pub struct Hit {
 
 impl Hit {
     pub fn payload_utf8(&self) -> Result<&str, Error> {
-        std::str::from_utf8(&self.payload).map_err(|e| Error::new(e.to_string()))
+        std::str::from_utf8(&self.payload).map_err(|e| Error::new(ErrorKind::Utf8, e.to_string()))
     }
 }
 
@@ -240,6 +286,18 @@ impl RetrieveResult {
 
     pub fn len(&self) -> usize {
         self.hits.len()
+    }
+
+    pub fn first(&self) -> Option<&Hit> {
+        self.hits.first()
+    }
+
+    pub fn payloads(&self) -> impl Iterator<Item = &[u8]> {
+        self.hits.iter().map(|hit| hit.payload.as_slice())
+    }
+
+    pub fn payload_strings(&self) -> Result<Vec<&str>, Error> {
+        self.hits.iter().map(Hit::payload_utf8).collect()
     }
 }
 
@@ -504,7 +562,7 @@ impl RocheDb {
         self.get(id)?
             .map(String::from_utf8)
             .transpose()
-            .map_err(|e| Error::new(e.to_string()))
+            .map_err(|e| Error::new(ErrorKind::Utf8, e.to_string()))
     }
 
     pub fn batch_get(&self, ids: &[RocheId]) -> Result<Vec<Vec<u8>>, Error> {
@@ -545,7 +603,8 @@ impl RocheDb {
     }
 
     pub fn query_string(&self, id: RocheId, selection: &str) -> Result<String, Error> {
-        String::from_utf8(self.query(id, selection)?).map_err(|e| Error::new(e.to_string()))
+        String::from_utf8(self.query(id, selection)?)
+            .map_err(|e| Error::new(ErrorKind::Utf8, e.to_string()))
     }
 
     pub fn retrieve(
@@ -639,7 +698,7 @@ impl RocheDb {
             return Err(Error::last());
         }
         let bytes = unsafe { take_buffer(p, len) };
-        String::from_utf8(bytes).map_err(|e| Error::new(e.to_string()))
+        String::from_utf8(bytes).map_err(|e| Error::new(ErrorKind::Utf8, e.to_string()))
     }
 
     pub fn locate(&self, id: RocheId, at: Option<f64>) -> Result<i32, Error> {
@@ -691,13 +750,44 @@ fn init() -> Result<(), Error> {
     INIT.call_once(|| unsafe { roche_init() });
     let version = unsafe { roche_abi_version() };
     if version != ROCHE_ABI_VERSION {
-        Err(Error::new(format!(
-            "RocheDB ABI version mismatch: expected {}, got {}",
-            ROCHE_ABI_VERSION, version
-        )))
+        Err(Error::new(
+            ErrorKind::AbiVersionMismatch,
+            format!(
+                "RocheDB ABI version mismatch: expected {}, got {}",
+                ROCHE_ABI_VERSION, version
+            ),
+        ))
     } else {
         Ok(())
     }
+}
+
+fn classify_abi_error(message: &str) -> ErrorKind {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("not found") || lower.contains("key not found") {
+        ErrorKind::NotFound
+    } else {
+        ErrorKind::Abi
+    }
+}
+
+fn parse_id_part<T>(parts: &mut std::str::Split<'_, char>, name: &str) -> Result<T, Error>
+where
+    T: FromStr,
+    T::Err: fmt::Display,
+{
+    let raw = parts.next().ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidId,
+            format!("invalid RocheDB id: missing {}", name),
+        )
+    })?;
+    raw.parse::<T>().map_err(|e| {
+        Error::new(
+            ErrorKind::InvalidId,
+            format!("invalid RocheDB id field '{}': {}", name, e),
+        )
+    })
 }
 
 fn empty_id() -> RocheId {
@@ -739,6 +829,7 @@ mod tests {
         let id = db.put_vec("docs/rust", payload, &[1.0, 0.0]).unwrap();
         assert!(!id.is_empty());
         assert!(id.to_string().contains(':'));
+        assert_eq!(RocheId::parse(&id.to_string()).unwrap(), id);
         assert_eq!(db.get(id).unwrap().unwrap(), payload);
         assert_eq!(
             db.get_string(id).unwrap().unwrap(),
@@ -759,7 +850,13 @@ mod tests {
             .unwrap();
         assert_eq!(rr.hits.len(), 1);
         assert!(!rr.is_empty());
+        assert!(rr.first().is_some());
         assert_eq!(rr.stats.scanned, 1);
+        assert_eq!(rr.payloads().collect::<Vec<_>>(), vec![payload.as_slice()]);
+        assert_eq!(
+            rr.payload_strings().unwrap(),
+            vec![r#"{"title":"hello rust","lang":"rust"}"#]
+        );
         assert_eq!(
             rr.hits[0].payload_utf8().unwrap(),
             r#"{"title":"hello rust","lang":"rust"}"#
@@ -782,6 +879,51 @@ mod tests {
     fn errors_include_c_abi_message() {
         let db = RocheDb::open(8).unwrap();
         let err = db.put("bad\0ring", b"x").unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::NulByte);
         assert!(err.to_string().contains("nul byte"));
+    }
+
+    #[test]
+    fn id_parse_reports_invalid_input() {
+        let parsed = RocheId::parse("1:2:3:4.5").unwrap();
+        assert_eq!(parsed, RocheId::new(1, 2, 3, 4.5));
+        assert_eq!(parsed.to_string(), "1:2:3:4.5");
+        assert_eq!("1:2:3:4.5".parse::<RocheId>().unwrap(), parsed);
+
+        let err = RocheId::parse("1:2:3").unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidId);
+        assert!(err.message().contains("missing"));
+
+        let err = RocheId::parse("1:2:3:4:5").unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidId);
+        assert!(err.message().contains("too many"));
+    }
+
+    #[test]
+    fn open_dir_reopens_persisted_data() {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!(
+            "rochedb-rust-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let id = {
+            let db = RocheDb::open_dir(4, dir.to_str().unwrap()).unwrap();
+            db.put_str("persist/rust", "persistent rust payload")
+                .unwrap()
+        };
+
+        let db = RocheDb::open_dir(4, dir.to_str().unwrap()).unwrap();
+        assert_eq!(
+            db.get_string(id).unwrap().unwrap(),
+            "persistent rust payload"
+        );
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
