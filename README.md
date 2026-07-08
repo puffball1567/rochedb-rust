@@ -6,6 +6,9 @@ This crate currently wraps the RocheDB C ABI. It gives Rust applications a safe
 embedded API while RocheDB keeps placement, ring metadata, retrieval planning,
 and ID generation inside the database core.
 
+Current driver version: `v0.1.0`.
+Tested against RocheDB core `v0.2.4`.
+
 ## Install
 
 After the crate is published:
