@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            roche_lib: librochedb.so
+          - os: macos-latest
+            roche_lib: librochedb.dylib
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout Rust driver
+        uses: actions/checkout@v4
+
+      - name: Checkout RocheDB core
+        uses: actions/checkout@v4
+        with:
+          repository: puffball1567/rochedb
+          path: rochedb-core
+
+      - name: Install Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: "2.2.10"
+
+      - name: Install libsodium on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsodium-dev
+
+      - name: Install libsodium on macOS
+        if: runner.os == 'macOS'
+        run: brew install libsodium
+
+      - name: Build RocheDB C ABI
+        run: |
+          cd rochedb-core
+          nimble install -y
+          nim c --app:lib -d:release --nimcache:/tmp/nimcache_roche_capi -o:lib/${{ matrix.roche_lib }} src/rochedb_capi.nim
+
+      - name: Test Rust driver
+        run: cargo test
+        env:
+          ROCHEDB_CORE_DIR: ${{ github.workspace }}/rochedb-core
+          LD_LIBRARY_PATH: ${{ github.workspace }}/rochedb-core/lib
+          DYLD_LIBRARY_PATH: ${{ github.workspace }}/rochedb-core/lib

@@ -1,0 +1,19 @@
+[package]
+name = "rochedb"
+version = "0.2.4"
+edition = "2021"
+license = "Apache-2.0"
+description = "Rust driver for RocheDB"
+repository = "https://github.com/puffball1567/rochedb-rust"
+homepage = "https://github.com/puffball1567/rochedb"
+documentation = "https://puffball1567.github.io/rochedb/"
+readme = "README.md"
+keywords = ["database", "nosql", "vector", "ffi", "rochedb"]
+categories = ["api-bindings", "database"]
+build = "build.rs"
+
+[lib]
+name = "rochedb"
+path = "src/lib.rs"
+
+[dependencies]
