@@ -39,6 +39,14 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install libsodium
 
+      - name: Configure macOS libsodium paths
+        if: runner.os == 'macOS'
+        run: |
+          prefix="$(brew --prefix libsodium)"
+          echo "LIBRARY_PATH=$prefix/lib:$LIBRARY_PATH" >> "$GITHUB_ENV"
+          echo "CPATH=$prefix/include:$CPATH" >> "$GITHUB_ENV"
+          echo "DYLD_LIBRARY_PATH=$prefix/lib:$DYLD_LIBRARY_PATH" >> "$GITHUB_ENV"
+
       - name: Build RocheDB C ABI
         run: |
           cd rochedb-core
