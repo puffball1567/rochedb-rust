@@ -11,6 +11,12 @@ Tested against RocheDB core `v0.2.5+`.
 
 ## Install
 
+Prerequisites:
+
+- Rust stable and Cargo
+- Nim 2.2.x to build RocheDB core. Install Nim: <https://nim-lang.org/install.html>. Nimble is included with the standard Nim installation.
+- `libsodium` development headers, required by RocheDB core. Install libsodium with your OS package manager or from <https://libsodium.org>.
+
 ```bash
 cargo add rochedb
 ```
@@ -28,6 +34,7 @@ Build the RocheDB shared library first:
 ```bash
 git clone https://github.com/puffball1567/rochedb.git
 cd rochedb
+nimble install -y
 nim c --app:lib -d:release --nimcache:/tmp/nimcache_roche_capi -o:lib/librochedb.so src/rochedb_capi.nim
 ```
 
