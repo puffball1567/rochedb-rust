@@ -11,8 +11,6 @@ Tested against RocheDB core `v0.2.5+`.
 
 ## Install
 
-After the crate is published:
-
 ```bash
 cargo add rochedb
 ```
