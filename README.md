@@ -6,8 +6,8 @@ This crate currently wraps the RocheDB C ABI. It gives Rust applications a safe
 embedded API while RocheDB keeps placement, ring metadata, retrieval planning,
 and ID generation inside the database core.
 
-Current driver version: `v0.1.3`.
-Tested against RocheDB core `v0.2.5+`.
+Current driver version: `v0.1.4`.
+Tested against RocheDB core `v0.3.0+` / C ABI v2.
 
 ## Install
 
@@ -57,16 +57,25 @@ script also detects `../rochedb/lib` and `../ceresdb/lib` automatically.
 ## Example
 
 ```rust
-use rochedb::{RetrieveOptions, RocheDb};
+use rochedb::{ReadRingOptions, RetrieveOptions, RocheDb};
 
 let db = RocheDb::open_default()?;
 db.set_galaxy_description("Product and support knowledge")?;
 db.set_ring_description("docs", "Documentation ring")?;
-let id = db.put_vec("docs", br#"{"title":"hello"}"#, &[1.0, 0.0])?;
+let id = db.put_json_vec("docs", r#"{"title":"hello","kind":"doc"}"#, &[1.0, 0.0])?;
 let roundtrip_id = id.to_string().parse::<rochedb::RocheId>()?;
 assert_eq!(roundtrip_id, id);
 let value = db.get_string(id)?.unwrap();
+let encoded = db.get_encoded(id)?.unwrap();
+assert_eq!(encoded.codec, rochedb::PayloadCodec::Json);
 let selected = db.query_string(id, "{ title }")?;
+let page = db.read_ring_json(
+    "docs",
+    &ReadRingOptions::new()
+        .filter_json(r#"{"kind":"doc"}"#)
+        .selection("{ title }")
+        .limit(10),
+)?;
 let results = db.retrieve_with(
     &[1.0, 0.0],
     RetrieveOptions::new().ring("docs").budget(8),
@@ -87,14 +96,15 @@ ROCHEDB_CORE_DIR=/path/to/rochedb cargo run --example embedded
 |---|---|
 | Embedded open | `RocheDb::open_default`, `open`, `open_dir` |
 | Cluster connect | `connect`, `connect_auth`, `ConnectOptions` |
-| Writes | `put`, `put_str`, `put_json`, `put_vec` |
-| Reads | `get`, `get_string`, `batch_get` |
+| Writes | `put`, `put_str`, `put_json`, `put_nif`, `put_bif`, `put_vec`, `put_vec_codec`, `put_json_vec`, `put_nif_vec`, `put_bif_vec` |
+| Reads | `get`, `get_encoded`, `get_string`, `batch_get`, `read_ring_json`, `ReadRingOptions` |
 | Projection | `query`, `query_string` |
 | Retrieval | `retrieve`, `retrieve_with`, `RetrieveOptions`, `RetrieveResult::first`, `payloads`, `payload_strings` |
 | Atlas | `atlas` |
 | Ring / galaxy metadata | `configure_ring`, `set_galaxy_description`, `set_ring_description` |
 | Orbit helpers | `now`, `advance`, `locate`, `next_visit`, `next_join` |
 | IDs | `RocheId`, `Display`, `FromStr`, `RocheId::parse` |
+| Payload codecs | `PayloadCodec`, `EncodedPayload` |
 | Error handling | `Result<T, rochedb::Error>`, `ErrorKind` |
 
 Still pending:

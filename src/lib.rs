@@ -7,9 +7,13 @@ use std::slice;
 use std::str::FromStr;
 use std::sync::Once;
 
-pub const ROCHE_ABI_VERSION: i32 = 1;
+pub const ROCHE_ABI_VERSION: i32 = 2;
 
 const ROCHE_OK: c_int = 0;
+const ROCHE_CODEC_RAW: c_int = 0;
+const ROCHE_CODEC_JSON: c_int = 1;
+const ROCHE_CODEC_NIF: c_int = 2;
+const ROCHE_CODEC_BIF: c_int = 3;
 
 static INIT: Once = Once::new();
 
@@ -67,6 +71,38 @@ impl FromStr for RocheId {
             ));
         }
         Ok(Self::new(parent, epoch, seq, t_write))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PayloadCodec {
+    Raw,
+    Json,
+    Nif,
+    Bif,
+}
+
+impl PayloadCodec {
+    fn as_c(self) -> c_int {
+        match self {
+            Self::Raw => ROCHE_CODEC_RAW,
+            Self::Json => ROCHE_CODEC_JSON,
+            Self::Nif => ROCHE_CODEC_NIF,
+            Self::Bif => ROCHE_CODEC_BIF,
+        }
+    }
+
+    fn from_c(value: c_int) -> Result<Self, Error> {
+        match value {
+            ROCHE_CODEC_RAW => Ok(Self::Raw),
+            ROCHE_CODEC_JSON => Ok(Self::Json),
+            ROCHE_CODEC_NIF => Ok(Self::Nif),
+            ROCHE_CODEC_BIF => Ok(Self::Bif),
+            _ => Err(Error::new(
+                ErrorKind::Abi,
+                format!("invalid RocheDB payload codec {}", value),
+            )),
+        }
     }
 }
 
@@ -139,6 +175,14 @@ extern "C" {
         len: usize,
         out_id: *mut RocheId,
     ) -> c_int;
+    fn roche_put_codec(
+        db: *mut c_void,
+        ring: *const c_char,
+        data: *const c_void,
+        len: usize,
+        codec: c_int,
+        out_id: *mut RocheId,
+    ) -> c_int;
     fn roche_put_vec(
         db: *mut c_void,
         ring: *const c_char,
@@ -148,7 +192,23 @@ extern "C" {
         vec_len: usize,
         out_id: *mut RocheId,
     ) -> c_int;
+    fn roche_put_vec_codec(
+        db: *mut c_void,
+        ring: *const c_char,
+        data: *const c_void,
+        len: usize,
+        codec: c_int,
+        vec: *const c_float,
+        vec_len: usize,
+        out_id: *mut RocheId,
+    ) -> c_int;
     fn roche_get(db: *mut c_void, id: RocheId, out_len: *mut usize) -> *mut c_void;
+    fn roche_get_codec(
+        db: *mut c_void,
+        id: RocheId,
+        out_len: *mut usize,
+        out_codec: *mut c_int,
+    ) -> *mut c_void;
     fn roche_batch_get(
         db: *mut c_void,
         ids: *const RocheId,
@@ -159,6 +219,20 @@ extern "C" {
         db: *mut c_void,
         id: RocheId,
         selection: *const c_char,
+        out_len: *mut usize,
+    ) -> *mut c_void;
+    fn roche_read_ring_json(
+        db: *mut c_void,
+        ring: *const c_char,
+        filter_json: *const c_char,
+        selection: *const c_char,
+        limit: c_int,
+        cursor: *const c_char,
+        pagination: c_int,
+        page: c_int,
+        page_limit: c_int,
+        sort_field: *const c_char,
+        sort_desc: c_int,
         out_len: *mut usize,
     ) -> *mut c_void;
     fn roche_retrieve(
@@ -257,6 +331,41 @@ pub struct Hit {
 impl Hit {
     pub fn payload_utf8(&self) -> Result<&str, Error> {
         std::str::from_utf8(&self.payload).map_err(|e| Error::new(ErrorKind::Utf8, e.to_string()))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncodedPayload {
+    pub data: Vec<u8>,
+    pub codec: PayloadCodec,
+}
+
+impl EncodedPayload {
+    pub fn new(data: impl Into<Vec<u8>>, codec: PayloadCodec) -> Self {
+        Self {
+            data: data.into(),
+            codec,
+        }
+    }
+
+    pub fn raw(data: impl Into<Vec<u8>>) -> Self {
+        Self::new(data, PayloadCodec::Raw)
+    }
+
+    pub fn json(data: impl Into<Vec<u8>>) -> Self {
+        Self::new(data, PayloadCodec::Json)
+    }
+
+    pub fn nif(data: impl Into<Vec<u8>>) -> Self {
+        Self::new(data, PayloadCodec::Nif)
+    }
+
+    pub fn bif(data: impl Into<Vec<u8>>) -> Self {
+        Self::new(data, PayloadCodec::Bif)
+    }
+
+    pub fn as_utf8(&self) -> Result<&str, Error> {
+        std::str::from_utf8(&self.data).map_err(|e| Error::new(ErrorKind::Utf8, e.to_string()))
     }
 }
 
@@ -394,6 +503,88 @@ impl RetrieveOptions {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadRingOptions {
+    pub filter_json: Option<String>,
+    pub selection: Option<String>,
+    pub limit: i32,
+    pub cursor: Option<String>,
+    pub pagination: bool,
+    pub page: i32,
+    pub page_limit: i32,
+    pub sort_field: Option<String>,
+    pub sort_desc: bool,
+}
+
+impl Default for ReadRingOptions {
+    fn default() -> Self {
+        Self {
+            filter_json: None,
+            selection: None,
+            limit: 100,
+            cursor: None,
+            pagination: false,
+            page: 1,
+            page_limit: 20,
+            sort_field: None,
+            sort_desc: true,
+        }
+    }
+}
+
+impl ReadRingOptions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn filter_json(mut self, value: impl Into<String>) -> Self {
+        self.filter_json = Some(value.into());
+        self
+    }
+
+    pub fn selection(mut self, value: impl Into<String>) -> Self {
+        self.selection = Some(value.into());
+        self
+    }
+
+    pub fn limit(mut self, value: i32) -> Self {
+        self.limit = value;
+        self
+    }
+
+    pub fn cursor(mut self, value: impl Into<String>) -> Self {
+        self.cursor = Some(value.into());
+        self
+    }
+
+    pub fn pagination(mut self, value: bool) -> Self {
+        self.pagination = value;
+        self
+    }
+
+    pub fn page(mut self, value: i32) -> Self {
+        self.page = value;
+        self
+    }
+
+    pub fn page_limit(mut self, value: i32) -> Self {
+        self.page_limit = value;
+        self
+    }
+
+    pub fn sort(mut self, field: impl Into<String>) -> Self {
+        self.sort_field = Some(field.into());
+        self.sort_desc = false;
+        self
+    }
+
+    pub fn rsort(mut self, field: impl Into<String>) -> Self {
+        self.sort_field = Some(field.into());
+        self.sort_desc = true;
+        self
+    }
+}
+
 pub struct RocheDb {
     raw: *mut c_void,
 }
@@ -510,12 +701,46 @@ impl RocheDb {
         Ok(id)
     }
 
+    pub fn put_codec(
+        &self,
+        ring: &str,
+        payload: &[u8],
+        codec: PayloadCodec,
+    ) -> Result<RocheId, Error> {
+        let ring = CString::new(ring)?;
+        let mut id = empty_id();
+        let data = if payload.is_empty() {
+            ptr::null()
+        } else {
+            payload.as_ptr() as *const c_void
+        };
+        self.check(unsafe {
+            roche_put_codec(
+                self.raw,
+                ring.as_ptr(),
+                data,
+                payload.len(),
+                codec.as_c(),
+                &mut id,
+            )
+        })?;
+        Ok(id)
+    }
+
     pub fn put_str(&self, ring: &str, payload: &str) -> Result<RocheId, Error> {
         self.put(ring, payload.as_bytes())
     }
 
     pub fn put_json(&self, ring: &str, payload: &str) -> Result<RocheId, Error> {
-        self.put_str(ring, payload)
+        self.put_codec(ring, payload.as_bytes(), PayloadCodec::Json)
+    }
+
+    pub fn put_nif(&self, ring: &str, payload: &str) -> Result<RocheId, Error> {
+        self.put_codec(ring, payload.as_bytes(), PayloadCodec::Nif)
+    }
+
+    pub fn put_bif(&self, ring: &str, payload: &[u8]) -> Result<RocheId, Error> {
+        self.put_codec(ring, payload, PayloadCodec::Bif)
     }
 
     pub fn put_vec(&self, ring: &str, payload: &[u8], vec: &[f32]) -> Result<RocheId, Error> {
@@ -545,6 +770,52 @@ impl RocheDb {
         Ok(id)
     }
 
+    pub fn put_vec_codec(
+        &self,
+        ring: &str,
+        payload: &[u8],
+        vec: &[f32],
+        codec: PayloadCodec,
+    ) -> Result<RocheId, Error> {
+        let ring = CString::new(ring)?;
+        let mut id = empty_id();
+        let data = if payload.is_empty() {
+            ptr::null()
+        } else {
+            payload.as_ptr() as *const c_void
+        };
+        let vec_ptr = if vec.is_empty() {
+            ptr::null()
+        } else {
+            vec.as_ptr()
+        };
+        self.check(unsafe {
+            roche_put_vec_codec(
+                self.raw,
+                ring.as_ptr(),
+                data,
+                payload.len(),
+                codec.as_c(),
+                vec_ptr,
+                vec.len(),
+                &mut id,
+            )
+        })?;
+        Ok(id)
+    }
+
+    pub fn put_json_vec(&self, ring: &str, payload: &str, vec: &[f32]) -> Result<RocheId, Error> {
+        self.put_vec_codec(ring, payload.as_bytes(), vec, PayloadCodec::Json)
+    }
+
+    pub fn put_nif_vec(&self, ring: &str, payload: &str, vec: &[f32]) -> Result<RocheId, Error> {
+        self.put_vec_codec(ring, payload.as_bytes(), vec, PayloadCodec::Nif)
+    }
+
+    pub fn put_bif_vec(&self, ring: &str, payload: &[u8], vec: &[f32]) -> Result<RocheId, Error> {
+        self.put_vec_codec(ring, payload, vec, PayloadCodec::Bif)
+    }
+
     pub fn get(&self, id: RocheId) -> Result<Option<Vec<u8>>, Error> {
         let mut len = 0usize;
         let p = unsafe { roche_get(self.raw, id, &mut len) };
@@ -556,6 +827,23 @@ impl RocheDb {
             return Err(err);
         }
         Ok(Some(unsafe { take_buffer(p, len) }))
+    }
+
+    pub fn get_encoded(&self, id: RocheId) -> Result<Option<EncodedPayload>, Error> {
+        let mut len = 0usize;
+        let mut codec = ROCHE_CODEC_RAW;
+        let p = unsafe { roche_get_codec(self.raw, id, &mut len, &mut codec) };
+        if p.is_null() {
+            let err = Error::last();
+            if err.message.contains("not found") || err.message.contains("key not found") {
+                return Ok(None);
+            }
+            return Err(err);
+        }
+        Ok(Some(EncodedPayload {
+            data: unsafe { take_buffer(p, len) },
+            codec: PayloadCodec::from_c(codec)?,
+        }))
     }
 
     pub fn get_string(&self, id: RocheId) -> Result<Option<String>, Error> {
@@ -604,6 +892,36 @@ impl RocheDb {
 
     pub fn query_string(&self, id: RocheId, selection: &str) -> Result<String, Error> {
         String::from_utf8(self.query(id, selection)?)
+            .map_err(|e| Error::new(ErrorKind::Utf8, e.to_string()))
+    }
+
+    pub fn read_ring_json(&self, ring: &str, options: &ReadRingOptions) -> Result<String, Error> {
+        let ring = CString::new(ring)?;
+        let filter_json = opt_cstring(options.filter_json.as_deref())?;
+        let selection = opt_cstring(options.selection.as_deref())?;
+        let cursor = opt_cstring(options.cursor.as_deref())?;
+        let sort_field = opt_cstring(options.sort_field.as_deref())?;
+        let mut len = 0usize;
+        let p = unsafe {
+            roche_read_ring_json(
+                self.raw,
+                ring.as_ptr(),
+                opt_ptr(&filter_json),
+                opt_ptr(&selection),
+                options.limit as c_int,
+                opt_ptr(&cursor),
+                if options.pagination { 1 } else { 0 },
+                options.page as c_int,
+                options.page_limit as c_int,
+                opt_ptr(&sort_field),
+                if options.sort_desc { 1 } else { 0 },
+                &mut len,
+            )
+        };
+        if p.is_null() {
+            return Err(Error::last());
+        }
+        String::from_utf8(unsafe { take_buffer(p, len) })
             .map_err(|e| Error::new(ErrorKind::Utf8, e.to_string()))
     }
 
@@ -826,11 +1144,24 @@ mod tests {
         db.configure_ring("docs/rust", 30.0).unwrap();
 
         let payload = br#"{"title":"hello rust","lang":"rust"}"#;
-        let id = db.put_vec("docs/rust", payload, &[1.0, 0.0]).unwrap();
+        let id = db
+            .put_json_vec(
+                "docs/rust",
+                std::str::from_utf8(payload).unwrap(),
+                &[1.0, 0.0],
+            )
+            .unwrap();
         assert!(!id.is_empty());
         assert!(id.to_string().contains(':'));
         assert_eq!(RocheId::parse(&id.to_string()).unwrap(), id);
         assert_eq!(db.get(id).unwrap().unwrap(), payload);
+        let encoded = db.get_encoded(id).unwrap().unwrap();
+        assert_eq!(encoded.codec, PayloadCodec::Json);
+        assert_eq!(encoded.data, payload);
+        assert_eq!(
+            encoded.as_utf8().unwrap(),
+            r#"{"title":"hello rust","lang":"rust"}"#
+        );
         assert_eq!(
             db.get_string(id).unwrap().unwrap(),
             r#"{"title":"hello rust","lang":"rust"}"#
@@ -841,6 +1172,34 @@ mod tests {
 
         let selected = db.query_string(id, "{ title }").unwrap();
         assert!(selected.contains("hello rust"));
+
+        let page = db
+            .read_ring_json(
+                "docs/rust",
+                &ReadRingOptions::new()
+                    .filter_json(r#"{"lang":"rust"}"#)
+                    .selection("{ title }")
+                    .limit(1)
+                    .rsort("time"),
+            )
+            .unwrap();
+        assert!(page.contains(r#""items""#));
+        assert!(page.contains(r#""count":1"#));
+        assert!(page.contains("hello rust"));
+        assert!(page.contains(r#""sort":"time""#));
+        assert!(page.contains(r#""sortDirection":"desc""#));
+
+        let bif_id = db
+            .put_bif_vec("artifacts/bif", &[1, 2, 3, 4], &[0.0, 1.0])
+            .unwrap();
+        let bif_encoded = db.get_encoded(bif_id).unwrap().unwrap();
+        assert_eq!(bif_encoded.codec, PayloadCodec::Bif);
+        assert_eq!(bif_encoded.data, vec![1, 2, 3, 4]);
+        let bif_page = db
+            .read_ring_json("artifacts/bif", &ReadRingOptions::new().limit(1))
+            .unwrap();
+        assert!(bif_page.contains(r#""codec":"bif""#));
+        assert!(bif_page.contains(r#""encoding":"base64""#));
 
         let rr = db
             .retrieve_with(
