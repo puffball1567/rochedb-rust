@@ -21,19 +21,19 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            roche_lib: librochedb.so
+            kouten_lib: libkoutendb.so
           - os: macos-latest
-            roche_lib: librochedb.dylib
+            kouten_lib: libkoutendb.dylib
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout Rust driver
         uses: actions/checkout@v4
 
-      - name: Checkout RocheDB core
+      - name: Checkout KoutenDB core
         uses: actions/checkout@v4
         with:
-          repository: puffball1567/rochedb
-          path: rochedb-core
+          repository: puffball1567/koutendb
+          path: koutendb-core
 
       - name: Install Nim on Linux
         if: runner.os == 'Linux'
@@ -61,15 +61,15 @@ jobs:
           echo "CPATH=$prefix/include:$CPATH" >> "$GITHUB_ENV"
           echo "DYLD_LIBRARY_PATH=$prefix/lib:$DYLD_LIBRARY_PATH" >> "$GITHUB_ENV"
 
-      - name: Build RocheDB C ABI
+      - name: Build KoutenDB C ABI
         run: |
-          cd rochedb-core
+          cd koutendb-core
           nimble install -y
-          nim c --app:lib -d:release --nimcache:/tmp/nimcache_roche_capi -o:lib/${{ matrix.roche_lib }} src/rochedb_capi.nim
+          nim c --app:lib -d:release --nimcache:/tmp/nimcache_kouten_capi -o:lib/${{ matrix.kouten_lib }} src/koutendb_capi.nim
 
       - name: Test Rust driver
         run: cargo test
         env:
-          ROCHEDB_CORE_DIR: ${{ github.workspace }}/rochedb-core
-          LD_LIBRARY_PATH: ${{ github.workspace }}/rochedb-core/lib
-          DYLD_LIBRARY_PATH: ${{ github.workspace }}/rochedb-core/lib
+          KOUTENDB_CORE_DIR: ${{ github.workspace }}/koutendb-core
+          LD_LIBRARY_PATH: ${{ github.workspace }}/koutendb-core/lib
+          DYLD_LIBRARY_PATH: ${{ github.workspace }}/koutendb-core/lib
