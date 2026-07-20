@@ -1,73 +1,73 @@
-# RocheDB Rust Driver
+# KoutenDB Rust Driver
 
-Rust driver for [RocheDB](https://github.com/puffball1567/rochedb).
+Rust driver for [KoutenDB](https://github.com/puffball1567/koutendb).
 
-This crate currently wraps the RocheDB C ABI. It gives Rust applications a safe
-embedded API while RocheDB keeps placement, ring metadata, retrieval planning,
+This crate currently wraps the KoutenDB C ABI. It gives Rust applications a safe
+embedded API while KoutenDB keeps placement, ring metadata, retrieval planning,
 and ID generation inside the database core.
 
 Current driver version: `v0.1.4`.
-Tested against RocheDB core `v0.3.0+` / C ABI v2.
+Tested against KoutenDB core `v0.3.0+` / C ABI v2.
 
 ## Install
 
 Prerequisites:
 
 - Rust stable and Cargo
-- Nim 2.2.x to build RocheDB core. Install Nim: <https://nim-lang.org/install.html>. Nimble is included with the standard Nim installation.
-- `libsodium` development headers, required by RocheDB core. Install libsodium with your OS package manager or from <https://libsodium.org>.
+- Nim 2.2.x to build KoutenDB core. Install Nim: <https://nim-lang.org/install.html>. Nimble is included with the standard Nim installation.
+- `libsodium` development headers, required by KoutenDB core. Install libsodium with your OS package manager or from <https://libsodium.org>.
 
 ```bash
-cargo add rochedb
+cargo add koutendb
 ```
 
-Or use RocheDB's driver discovery command from the core CLI:
+Or use KoutenDB's driver discovery command from the core CLI:
 
 ```bash
-roche driver install rust --manifest-path=/path/to/Cargo.toml
+kouten driver install rust --manifest-path=/path/to/Cargo.toml
 ```
 
-## Link RocheDB Core
+## Link KoutenDB Core
 
-Build the RocheDB shared library first:
+Build the KoutenDB shared library first:
 
 ```bash
-git clone https://github.com/puffball1567/rochedb.git
-cd rochedb
+git clone https://github.com/puffball1567/koutendb.git
+cd koutendb
 nimble install -y
-nim c --app:lib -d:release --nimcache:/tmp/nimcache_roche_capi -o:lib/librochedb.so src/rochedb_capi.nim
+nim c --app:lib -d:release --nimcache:/tmp/nimcache_kouten_capi -o:lib/libkoutendb.so src/koutendb_capi.nim
 ```
 
-Then point this Rust crate at the RocheDB core checkout or shared-library
+Then point this Rust crate at the KoutenDB core checkout or shared-library
 directory:
 
 ```bash
-ROCHEDB_CORE_DIR=/path/to/rochedb cargo test
+KOUTENDB_CORE_DIR=/path/to/koutendb cargo test
 ```
 
 or:
 
 ```bash
-ROCHEDB_LIB_DIR=/path/to/rochedb/lib cargo test
+KOUTENDB_LIB_DIR=/path/to/koutendb/lib cargo test
 ```
 
-If this repository is checked out next to `rochedb` or `ceresdb`, the build
-script also detects `../rochedb/lib` and `../ceresdb/lib` automatically.
+If this repository is checked out next to `koutendb` or `ceresdb`, the build
+script also detects `../koutendb/lib` and `../ceresdb/lib` automatically.
 
 ## Example
 
 ```rust
-use rochedb::{ReadRingOptions, RetrieveOptions, RocheDb};
+use koutendb::{ReadRingOptions, RetrieveOptions, KoutenDb};
 
-let db = RocheDb::open_default()?;
+let db = KoutenDb::open_default()?;
 db.set_galaxy_description("Product and support knowledge")?;
 db.set_ring_description("docs", "Documentation ring")?;
 let id = db.put_json_vec("docs", r#"{"title":"hello","kind":"doc"}"#, &[1.0, 0.0])?;
-let roundtrip_id = id.to_string().parse::<rochedb::RocheId>()?;
+let roundtrip_id = id.to_string().parse::<koutendb::KoutenId>()?;
 assert_eq!(roundtrip_id, id);
 let value = db.get_string(id)?.unwrap();
 let encoded = db.get_encoded(id)?.unwrap();
-assert_eq!(encoded.codec, rochedb::PayloadCodec::Json);
+assert_eq!(encoded.codec, koutendb::PayloadCodec::Json);
 let selected = db.query_string(id, "{ title }")?;
 let page = db.read_ring_json(
     "docs",
@@ -81,21 +81,54 @@ let results = db.retrieve_with(
     RetrieveOptions::new().ring("docs").budget(8),
 )?;
 let atlas = db.atlas(Some(&[1.0, 0.0]), 8)?;
-# Ok::<(), rochedb::Error>(())
+# Ok::<(), koutendb::Error>(())
 ```
 
 Run the full example:
 
 ```bash
-ROCHEDB_CORE_DIR=/path/to/rochedb cargo run --example embedded
+KOUTENDB_CORE_DIR=/path/to/koutendb cargo run --example embedded
+```
+
+## TLS
+
+TLS requires a KoutenDB core built with `-d:ssl`. The shared library that ships
+from `scripts/driver_compat.sh` is built without it, so a TLS connect fails with
+`TLS support requires building KoutenDB with -d:ssl` until you rebuild it:
+
+```bash
+nim c --app:lib -d:ssl -d:release -o:lib/libkoutendb.so src/koutendb_capi.nim
+```
+
+To reach a server whose certificate is signed by a private CA — or is
+self-signed — point at the certificate PEM. Verification stays on:
+
+```rust
+let db = ConnectOptions::new("127.0.0.1:17651")
+    .username("alice")
+    .password("secret")
+    .tls_ca_file("/path/to/server.crt")
+    .connect()?;
+```
+
+`danger_accept_invalid_certs()` disables certificate verification entirely. The
+connection is then encrypted but unauthenticated and trivially impersonable, so
+it is for local smoke tests only — never a production server. Prefer
+`tls_ca_file` for self-signed certificates.
+
+```bash
+KOUTENDB_CORE_DIR=/path/to/koutendb \
+KOUTEN_PEERS=127.0.0.1:17651 KOUTEN_TLS_CA=/path/to/server.crt \
+  cargo run --example cluster_tls
 ```
 
 ## Current API Coverage
 
 | Area | Status |
 |---|---|
-| Embedded open | `RocheDb::open_default`, `open`, `open_dir` |
-| Cluster connect | `connect`, `connect_auth`, `ConnectOptions` |
+| Embedded open | `KoutenDb::open_default`, `open`, `open_dir` |
+| Cluster connect | `connect`, `connect_auth`, `connect_auth_tls`, `ConnectOptions` |
+| TLS | `ConnectOptions::tls`, `tls_ca_file`, `tls_server_name`, `danger_accept_invalid_certs` |
 | Writes | `put`, `put_str`, `put_json`, `put_nif`, `put_bif`, `put_vec`, `put_vec_codec`, `put_json_vec`, `put_nif_vec`, `put_bif_vec` |
 | Reads | `get`, `get_encoded`, `get_string`, `batch_get`, `read_ring_json`, `ReadRingOptions` |
 | Projection | `query`, `query_string` |
@@ -103,9 +136,9 @@ ROCHEDB_CORE_DIR=/path/to/rochedb cargo run --example embedded
 | Atlas | `atlas` |
 | Ring / galaxy metadata | `configure_ring`, `set_galaxy_description`, `set_ring_description` |
 | Orbit helpers | `now`, `advance`, `locate`, `next_visit`, `next_join` |
-| IDs | `RocheId`, `Display`, `FromStr`, `RocheId::parse` |
+| IDs | `KoutenId`, `Display`, `FromStr`, `KoutenId::parse` |
 | Payload codecs | `PayloadCodec`, `EncodedPayload` |
-| Error handling | `Result<T, rochedb::Error>`, `ErrorKind` |
+| Error handling | `Result<T, koutendb::Error>`, `ErrorKind` |
 
 Still pending:
 
@@ -119,7 +152,7 @@ Still pending:
 
 ```bash
 cargo fmt
-ROCHEDB_CORE_DIR=/path/to/rochedb cargo test
+KOUTENDB_CORE_DIR=/path/to/koutendb cargo test
 ```
 
 This package intentionally starts as a thin C ABI wrapper. A native TCP driver

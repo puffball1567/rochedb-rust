@@ -7,26 +7,26 @@ use std::slice;
 use std::str::FromStr;
 use std::sync::Once;
 
-pub const ROCHE_ABI_VERSION: i32 = 2;
+pub const KOUTEN_ABI_VERSION: i32 = 2;
 
-const ROCHE_OK: c_int = 0;
-const ROCHE_CODEC_RAW: c_int = 0;
-const ROCHE_CODEC_JSON: c_int = 1;
-const ROCHE_CODEC_NIF: c_int = 2;
-const ROCHE_CODEC_BIF: c_int = 3;
+const KOUTEN_OK: c_int = 0;
+const KOUTEN_CODEC_RAW: c_int = 0;
+const KOUTEN_CODEC_JSON: c_int = 1;
+const KOUTEN_CODEC_NIF: c_int = 2;
+const KOUTEN_CODEC_BIF: c_int = 3;
 
 static INIT: Once = Once::new();
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct RocheId {
+pub struct KoutenId {
     pub parent: u64,
     pub epoch: u32,
     pub seq: u32,
     pub t_write: f64,
 }
 
-impl RocheId {
+impl KoutenId {
     pub fn new(parent: u64, epoch: u32, seq: u32, t_write: f64) -> Self {
         Self {
             parent,
@@ -45,7 +45,7 @@ impl RocheId {
     }
 }
 
-impl fmt::Display for RocheId {
+impl fmt::Display for KoutenId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -55,7 +55,7 @@ impl fmt::Display for RocheId {
     }
 }
 
-impl FromStr for RocheId {
+impl FromStr for KoutenId {
     type Err = Error;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -67,7 +67,7 @@ impl FromStr for RocheId {
         if parts.next().is_some() {
             return Err(Error::new(
                 ErrorKind::InvalidId,
-                format!("invalid RocheDB id '{}': too many fields", value),
+                format!("invalid KoutenDB id '{}': too many fields", value),
             ));
         }
         Ok(Self::new(parent, epoch, seq, t_write))
@@ -85,51 +85,51 @@ pub enum PayloadCodec {
 impl PayloadCodec {
     fn as_c(self) -> c_int {
         match self {
-            Self::Raw => ROCHE_CODEC_RAW,
-            Self::Json => ROCHE_CODEC_JSON,
-            Self::Nif => ROCHE_CODEC_NIF,
-            Self::Bif => ROCHE_CODEC_BIF,
+            Self::Raw => KOUTEN_CODEC_RAW,
+            Self::Json => KOUTEN_CODEC_JSON,
+            Self::Nif => KOUTEN_CODEC_NIF,
+            Self::Bif => KOUTEN_CODEC_BIF,
         }
     }
 
     fn from_c(value: c_int) -> Result<Self, Error> {
         match value {
-            ROCHE_CODEC_RAW => Ok(Self::Raw),
-            ROCHE_CODEC_JSON => Ok(Self::Json),
-            ROCHE_CODEC_NIF => Ok(Self::Nif),
-            ROCHE_CODEC_BIF => Ok(Self::Bif),
+            KOUTEN_CODEC_RAW => Ok(Self::Raw),
+            KOUTEN_CODEC_JSON => Ok(Self::Json),
+            KOUTEN_CODEC_NIF => Ok(Self::Nif),
+            KOUTEN_CODEC_BIF => Ok(Self::Bif),
             _ => Err(Error::new(
                 ErrorKind::Abi,
-                format!("invalid RocheDB payload codec {}", value),
+                format!("invalid KoutenDB payload codec {}", value),
             )),
         }
     }
 }
 
 #[repr(C)]
-struct RocheValue {
+struct KoutenValue {
     data: *mut c_void,
     len: usize,
 }
 
 #[repr(C)]
-struct RocheBatchResult {
+struct KoutenBatchResult {
     len: usize,
-    values: *mut RocheValue,
+    values: *mut KoutenValue,
 }
 
 #[repr(C)]
-struct RocheHitRaw {
-    id: RocheId,
+struct KoutenHitRaw {
+    id: KoutenId,
     score: c_double,
     payload: *mut c_void,
     payload_len: usize,
 }
 
 #[repr(C)]
-struct RocheRetrieveResultRaw {
+struct KoutenRetrieveResultRaw {
     len: usize,
-    hits: *mut RocheHitRaw,
+    hits: *mut KoutenHitRaw,
     total_vectors: c_int,
     scanned: c_int,
     skipped_vectors: c_int,
@@ -141,15 +141,15 @@ struct RocheRetrieveResultRaw {
     candidate_reduction: c_double,
 }
 
-#[link(name = "rochedb")]
+#[link(name = "koutendb")]
 extern "C" {
-    fn roche_init();
-    fn roche_abi_version() -> c_int;
-    fn roche_last_error() -> *const c_char;
-    fn roche_open(nodes: c_int) -> *mut c_void;
-    fn roche_open_dir(nodes: c_int, dir: *const c_char) -> *mut c_void;
-    fn roche_connect(peers: *const c_char) -> *mut c_void;
-    fn roche_connect_auth(
+    fn kouten_init();
+    fn kouten_abi_version() -> c_int;
+    fn kouten_last_error() -> *const c_char;
+    fn kouten_open(nodes: c_int) -> *mut c_void;
+    fn kouten_open_dir(nodes: c_int, dir: *const c_char) -> *mut c_void;
+    fn kouten_connect(peers: *const c_char) -> *mut c_void;
+    fn kouten_connect_auth(
         peers: *const c_char,
         username: *const c_char,
         password: *const c_char,
@@ -157,42 +157,54 @@ extern "C" {
         secret_key: *const c_char,
         galaxy: *const c_char,
     ) -> *mut c_void;
-    fn roche_close(db: *mut c_void);
-    fn roche_free(p: *mut c_void);
-    fn roche_now(db: *mut c_void) -> c_double;
-    fn roche_advance(db: *mut c_void, dt: c_double);
-    fn roche_ring_configure(db: *mut c_void, ring: *const c_char, period: c_double) -> c_int;
-    fn roche_set_galaxy_description(db: *mut c_void, description: *const c_char) -> c_int;
-    fn roche_set_ring_description(
+    fn kouten_connect_auth_tls(
+        peers: *const c_char,
+        username: *const c_char,
+        password: *const c_char,
+        auth_token: *const c_char,
+        secret_key: *const c_char,
+        galaxy: *const c_char,
+        tls: c_int,
+        tls_ca_file: *const c_char,
+        tls_server_name: *const c_char,
+        tls_insecure_skip_verify: c_int,
+    ) -> *mut c_void;
+    fn kouten_close(db: *mut c_void);
+    fn kouten_free(p: *mut c_void);
+    fn kouten_now(db: *mut c_void) -> c_double;
+    fn kouten_advance(db: *mut c_void, dt: c_double);
+    fn kouten_ring_configure(db: *mut c_void, ring: *const c_char, period: c_double) -> c_int;
+    fn kouten_set_galaxy_description(db: *mut c_void, description: *const c_char) -> c_int;
+    fn kouten_set_ring_description(
         db: *mut c_void,
         ring: *const c_char,
         description: *const c_char,
     ) -> c_int;
-    fn roche_put(
+    fn kouten_put(
         db: *mut c_void,
         ring: *const c_char,
         data: *const c_void,
         len: usize,
-        out_id: *mut RocheId,
+        out_id: *mut KoutenId,
     ) -> c_int;
-    fn roche_put_codec(
+    fn kouten_put_codec(
         db: *mut c_void,
         ring: *const c_char,
         data: *const c_void,
         len: usize,
         codec: c_int,
-        out_id: *mut RocheId,
+        out_id: *mut KoutenId,
     ) -> c_int;
-    fn roche_put_vec(
+    fn kouten_put_vec(
         db: *mut c_void,
         ring: *const c_char,
         data: *const c_void,
         len: usize,
         vec: *const c_float,
         vec_len: usize,
-        out_id: *mut RocheId,
+        out_id: *mut KoutenId,
     ) -> c_int;
-    fn roche_put_vec_codec(
+    fn kouten_put_vec_codec(
         db: *mut c_void,
         ring: *const c_char,
         data: *const c_void,
@@ -200,28 +212,28 @@ extern "C" {
         codec: c_int,
         vec: *const c_float,
         vec_len: usize,
-        out_id: *mut RocheId,
+        out_id: *mut KoutenId,
     ) -> c_int;
-    fn roche_get(db: *mut c_void, id: RocheId, out_len: *mut usize) -> *mut c_void;
-    fn roche_get_codec(
+    fn kouten_get(db: *mut c_void, id: KoutenId, out_len: *mut usize) -> *mut c_void;
+    fn kouten_get_codec(
         db: *mut c_void,
-        id: RocheId,
+        id: KoutenId,
         out_len: *mut usize,
         out_codec: *mut c_int,
     ) -> *mut c_void;
-    fn roche_batch_get(
+    fn kouten_batch_get(
         db: *mut c_void,
-        ids: *const RocheId,
+        ids: *const KoutenId,
         ids_len: usize,
-    ) -> *mut RocheBatchResult;
-    fn roche_batch_get_free(r: *mut RocheBatchResult);
-    fn roche_query(
+    ) -> *mut KoutenBatchResult;
+    fn kouten_batch_get_free(r: *mut KoutenBatchResult);
+    fn kouten_query(
         db: *mut c_void,
-        id: RocheId,
+        id: KoutenId,
         selection: *const c_char,
         out_len: *mut usize,
     ) -> *mut c_void;
-    fn roche_read_ring_json(
+    fn kouten_read_ring_json(
         db: *mut c_void,
         ring: *const c_char,
         filter_json: *const c_char,
@@ -235,7 +247,7 @@ extern "C" {
         sort_desc: c_int,
         out_len: *mut usize,
     ) -> *mut c_void;
-    fn roche_retrieve(
+    fn kouten_retrieve(
         db: *mut c_void,
         vec: *const c_float,
         vec_len: usize,
@@ -243,18 +255,18 @@ extern "C" {
         budget: c_int,
         top_rings: c_int,
         focus: c_int,
-    ) -> *mut RocheRetrieveResultRaw;
-    fn roche_retrieve_free(r: *mut RocheRetrieveResultRaw);
-    fn roche_atlas(
+    ) -> *mut KoutenRetrieveResultRaw;
+    fn kouten_retrieve_free(r: *mut KoutenRetrieveResultRaw);
+    fn kouten_atlas(
         db: *mut c_void,
         query_vec: *const c_float,
         query_vec_len: usize,
         max_centroid_dims: c_int,
         out_len: *mut usize,
     ) -> *mut c_void;
-    fn roche_locate(db: *mut c_void, id: RocheId, at: c_double) -> c_int;
-    fn roche_next_visit(db: *mut c_void, id: RocheId, node: c_int) -> c_double;
-    fn roche_next_join(db: *mut c_void, a: RocheId, b: RocheId) -> c_double;
+    fn kouten_locate(db: *mut c_void, id: KoutenId, at: c_double) -> c_int;
+    fn kouten_next_visit(db: *mut c_void, id: KoutenId, node: c_int) -> c_double;
+    fn kouten_next_join(db: *mut c_void, a: KoutenId, b: KoutenId) -> c_double;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -291,13 +303,13 @@ impl Error {
 
     fn last() -> Self {
         unsafe {
-            let p = roche_last_error();
+            let p = kouten_last_error();
             if p.is_null() {
-                return Self::new(ErrorKind::Abi, "RocheDB C ABI error");
+                return Self::new(ErrorKind::Abi, "KoutenDB C ABI error");
             }
             let s = CStr::from_ptr(p).to_string_lossy();
             if s.is_empty() {
-                Self::new(ErrorKind::Abi, "RocheDB C ABI error")
+                Self::new(ErrorKind::Abi, "KoutenDB C ABI error")
             } else {
                 let message = s.into_owned();
                 let kind = classify_abi_error(&message);
@@ -323,7 +335,7 @@ impl From<NulError> for Error {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hit {
-    pub id: RocheId,
+    pub id: KoutenId,
     pub score: f64,
     pub payload: Vec<u8>,
 }
@@ -418,6 +430,10 @@ pub struct ConnectOptions {
     pub auth_token: Option<String>,
     pub secret_key: Option<String>,
     pub galaxy: Option<String>,
+    pub tls: bool,
+    pub tls_ca_file: Option<String>,
+    pub tls_server_name: Option<String>,
+    pub tls_insecure_skip_verify: bool,
 }
 
 impl ConnectOptions {
@@ -453,8 +469,43 @@ impl ConnectOptions {
         self
     }
 
-    pub fn connect(self) -> Result<RocheDb, Error> {
-        RocheDb::connect_options(&self)
+    /// Enable TLS. Requires a KoutenDB core built with `-d:ssl`.
+    pub fn tls(mut self) -> Self {
+        self.tls = true;
+        self
+    }
+
+    /// Verify the server against a CA or self-signed certificate PEM, and
+    /// enable TLS. Certificate verification stays on, so this is the right way
+    /// to reach a server with a private CA or self-signed certificate.
+    pub fn tls_ca_file(mut self, value: impl Into<String>) -> Self {
+        self.tls_ca_file = Some(value.into());
+        self.tls = true;
+        self
+    }
+
+    /// Override the hostname used for verification and SNI.
+    pub fn tls_server_name(mut self, value: impl Into<String>) -> Self {
+        self.tls_server_name = Some(value.into());
+        self.tls = true;
+        self
+    }
+
+    /// Disable certificate verification entirely, and enable TLS.
+    ///
+    /// This accepts any certificate, which makes the connection trivially
+    /// impersonable — encrypted but unauthenticated. Intended only for local
+    /// smoke tests; never enable it against a production server. To reach a
+    /// server with a self-signed certificate while keeping verification on,
+    /// use [`ConnectOptions::tls_ca_file`] instead.
+    pub fn danger_accept_invalid_certs(mut self) -> Self {
+        self.tls_insecure_skip_verify = true;
+        self.tls = true;
+        self
+    }
+
+    pub fn connect(self) -> Result<KoutenDb, Error> {
+        KoutenDb::connect_options(&self)
     }
 }
 
@@ -585,45 +636,59 @@ impl ReadRingOptions {
     }
 }
 
-pub struct RocheDb {
+pub struct KoutenDb {
     raw: *mut c_void,
 }
 
-unsafe impl Send for RocheDb {}
+unsafe impl Send for KoutenDb {}
 
-impl RocheDb {
+impl KoutenDb {
     pub fn open_default() -> Result<Self, Error> {
         Self::open(8)
     }
 
     pub fn open(nodes: i32) -> Result<Self, Error> {
         init()?;
-        let raw = unsafe { roche_open(nodes as c_int) };
+        let raw = unsafe { kouten_open(nodes as c_int) };
         Self::from_raw(raw)
     }
 
     pub fn open_dir(nodes: i32, dir: &str) -> Result<Self, Error> {
         init()?;
         let dir = CString::new(dir)?;
-        let raw = unsafe { roche_open_dir(nodes as c_int, dir.as_ptr()) };
+        let raw = unsafe { kouten_open_dir(nodes as c_int, dir.as_ptr()) };
         Self::from_raw(raw)
     }
 
     pub fn connect(peers: &str) -> Result<Self, Error> {
         init()?;
         let peers = CString::new(peers)?;
-        let raw = unsafe { roche_connect(peers.as_ptr()) };
+        let raw = unsafe { kouten_connect(peers.as_ptr()) };
         Self::from_raw(raw)
     }
 
     pub fn connect_options(options: &ConnectOptions) -> Result<Self, Error> {
-        Self::connect_auth(
+        if !options.tls {
+            return Self::connect_auth(
+                &options.peers,
+                options.username.as_deref(),
+                options.password.as_deref(),
+                options.auth_token.as_deref(),
+                options.secret_key.as_deref(),
+                options.galaxy.as_deref(),
+            );
+        }
+        Self::connect_auth_tls(
             &options.peers,
             options.username.as_deref(),
             options.password.as_deref(),
             options.auth_token.as_deref(),
             options.secret_key.as_deref(),
             options.galaxy.as_deref(),
+            options.tls,
+            options.tls_ca_file.as_deref(),
+            options.tls_server_name.as_deref(),
+            options.tls_insecure_skip_verify,
         )
     }
 
@@ -643,13 +708,59 @@ impl RocheDb {
         let secret_key = opt_cstring(secret_key)?;
         let galaxy = opt_cstring(galaxy)?;
         let raw = unsafe {
-            roche_connect_auth(
+            kouten_connect_auth(
                 peers.as_ptr(),
                 opt_ptr(&username),
                 opt_ptr(&password),
                 opt_ptr(&auth_token),
                 opt_ptr(&secret_key),
                 opt_ptr(&galaxy),
+            )
+        };
+        Self::from_raw(raw)
+    }
+
+    /// Authenticated cluster connection with TLS. Enabling `tls` requires a
+    /// KoutenDB core built with `-d:ssl`.
+    ///
+    /// Prefer [`ConnectOptions`] unless you need to mirror the C ABI directly.
+    /// Setting `tls_insecure_skip_verify` disables certificate verification and
+    /// is intended only for local smoke tests; pass `tls_ca_file` instead to
+    /// verify against a private CA or self-signed certificate.
+    #[allow(clippy::too_many_arguments)]
+    pub fn connect_auth_tls(
+        peers: &str,
+        username: Option<&str>,
+        password: Option<&str>,
+        auth_token: Option<&str>,
+        secret_key: Option<&str>,
+        galaxy: Option<&str>,
+        tls: bool,
+        tls_ca_file: Option<&str>,
+        tls_server_name: Option<&str>,
+        tls_insecure_skip_verify: bool,
+    ) -> Result<Self, Error> {
+        init()?;
+        let peers = CString::new(peers)?;
+        let username = opt_cstring(username)?;
+        let password = opt_cstring(password)?;
+        let auth_token = opt_cstring(auth_token)?;
+        let secret_key = opt_cstring(secret_key)?;
+        let galaxy = opt_cstring(galaxy)?;
+        let tls_ca_file = opt_cstring(tls_ca_file)?;
+        let tls_server_name = opt_cstring(tls_server_name)?;
+        let raw = unsafe {
+            kouten_connect_auth_tls(
+                peers.as_ptr(),
+                opt_ptr(&username),
+                opt_ptr(&password),
+                opt_ptr(&auth_token),
+                opt_ptr(&secret_key),
+                opt_ptr(&galaxy),
+                c_int::from(tls),
+                opt_ptr(&tls_ca_file),
+                opt_ptr(&tls_server_name),
+                c_int::from(tls_insecure_skip_verify),
             )
         };
         Self::from_raw(raw)
@@ -664,32 +775,32 @@ impl RocheDb {
     }
 
     pub fn now(&self) -> f64 {
-        unsafe { roche_now(self.raw) }
+        unsafe { kouten_now(self.raw) }
     }
 
     pub fn advance(&self, dt: f64) {
-        unsafe { roche_advance(self.raw, dt) };
+        unsafe { kouten_advance(self.raw, dt) };
     }
 
     pub fn configure_ring(&self, ring: &str, period: f64) -> Result<(), Error> {
         let ring = CString::new(ring)?;
-        self.check(unsafe { roche_ring_configure(self.raw, ring.as_ptr(), period) })
+        self.check(unsafe { kouten_ring_configure(self.raw, ring.as_ptr(), period) })
     }
 
     pub fn set_galaxy_description(&self, description: &str) -> Result<(), Error> {
         let description = CString::new(description)?;
-        self.check(unsafe { roche_set_galaxy_description(self.raw, description.as_ptr()) })
+        self.check(unsafe { kouten_set_galaxy_description(self.raw, description.as_ptr()) })
     }
 
     pub fn set_ring_description(&self, ring: &str, description: &str) -> Result<(), Error> {
         let ring = CString::new(ring)?;
         let description = CString::new(description)?;
         self.check(unsafe {
-            roche_set_ring_description(self.raw, ring.as_ptr(), description.as_ptr())
+            kouten_set_ring_description(self.raw, ring.as_ptr(), description.as_ptr())
         })
     }
 
-    pub fn put(&self, ring: &str, payload: &[u8]) -> Result<RocheId, Error> {
+    pub fn put(&self, ring: &str, payload: &[u8]) -> Result<KoutenId, Error> {
         let ring = CString::new(ring)?;
         let mut id = empty_id();
         let data = if payload.is_empty() {
@@ -697,7 +808,7 @@ impl RocheDb {
         } else {
             payload.as_ptr() as *const c_void
         };
-        self.check(unsafe { roche_put(self.raw, ring.as_ptr(), data, payload.len(), &mut id) })?;
+        self.check(unsafe { kouten_put(self.raw, ring.as_ptr(), data, payload.len(), &mut id) })?;
         Ok(id)
     }
 
@@ -706,7 +817,7 @@ impl RocheDb {
         ring: &str,
         payload: &[u8],
         codec: PayloadCodec,
-    ) -> Result<RocheId, Error> {
+    ) -> Result<KoutenId, Error> {
         let ring = CString::new(ring)?;
         let mut id = empty_id();
         let data = if payload.is_empty() {
@@ -715,7 +826,7 @@ impl RocheDb {
             payload.as_ptr() as *const c_void
         };
         self.check(unsafe {
-            roche_put_codec(
+            kouten_put_codec(
                 self.raw,
                 ring.as_ptr(),
                 data,
@@ -727,23 +838,23 @@ impl RocheDb {
         Ok(id)
     }
 
-    pub fn put_str(&self, ring: &str, payload: &str) -> Result<RocheId, Error> {
+    pub fn put_str(&self, ring: &str, payload: &str) -> Result<KoutenId, Error> {
         self.put(ring, payload.as_bytes())
     }
 
-    pub fn put_json(&self, ring: &str, payload: &str) -> Result<RocheId, Error> {
+    pub fn put_json(&self, ring: &str, payload: &str) -> Result<KoutenId, Error> {
         self.put_codec(ring, payload.as_bytes(), PayloadCodec::Json)
     }
 
-    pub fn put_nif(&self, ring: &str, payload: &str) -> Result<RocheId, Error> {
+    pub fn put_nif(&self, ring: &str, payload: &str) -> Result<KoutenId, Error> {
         self.put_codec(ring, payload.as_bytes(), PayloadCodec::Nif)
     }
 
-    pub fn put_bif(&self, ring: &str, payload: &[u8]) -> Result<RocheId, Error> {
+    pub fn put_bif(&self, ring: &str, payload: &[u8]) -> Result<KoutenId, Error> {
         self.put_codec(ring, payload, PayloadCodec::Bif)
     }
 
-    pub fn put_vec(&self, ring: &str, payload: &[u8], vec: &[f32]) -> Result<RocheId, Error> {
+    pub fn put_vec(&self, ring: &str, payload: &[u8], vec: &[f32]) -> Result<KoutenId, Error> {
         let ring = CString::new(ring)?;
         let mut id = empty_id();
         let data = if payload.is_empty() {
@@ -757,7 +868,7 @@ impl RocheDb {
             vec.as_ptr()
         };
         self.check(unsafe {
-            roche_put_vec(
+            kouten_put_vec(
                 self.raw,
                 ring.as_ptr(),
                 data,
@@ -776,7 +887,7 @@ impl RocheDb {
         payload: &[u8],
         vec: &[f32],
         codec: PayloadCodec,
-    ) -> Result<RocheId, Error> {
+    ) -> Result<KoutenId, Error> {
         let ring = CString::new(ring)?;
         let mut id = empty_id();
         let data = if payload.is_empty() {
@@ -790,7 +901,7 @@ impl RocheDb {
             vec.as_ptr()
         };
         self.check(unsafe {
-            roche_put_vec_codec(
+            kouten_put_vec_codec(
                 self.raw,
                 ring.as_ptr(),
                 data,
@@ -804,21 +915,21 @@ impl RocheDb {
         Ok(id)
     }
 
-    pub fn put_json_vec(&self, ring: &str, payload: &str, vec: &[f32]) -> Result<RocheId, Error> {
+    pub fn put_json_vec(&self, ring: &str, payload: &str, vec: &[f32]) -> Result<KoutenId, Error> {
         self.put_vec_codec(ring, payload.as_bytes(), vec, PayloadCodec::Json)
     }
 
-    pub fn put_nif_vec(&self, ring: &str, payload: &str, vec: &[f32]) -> Result<RocheId, Error> {
+    pub fn put_nif_vec(&self, ring: &str, payload: &str, vec: &[f32]) -> Result<KoutenId, Error> {
         self.put_vec_codec(ring, payload.as_bytes(), vec, PayloadCodec::Nif)
     }
 
-    pub fn put_bif_vec(&self, ring: &str, payload: &[u8], vec: &[f32]) -> Result<RocheId, Error> {
+    pub fn put_bif_vec(&self, ring: &str, payload: &[u8], vec: &[f32]) -> Result<KoutenId, Error> {
         self.put_vec_codec(ring, payload, vec, PayloadCodec::Bif)
     }
 
-    pub fn get(&self, id: RocheId) -> Result<Option<Vec<u8>>, Error> {
+    pub fn get(&self, id: KoutenId) -> Result<Option<Vec<u8>>, Error> {
         let mut len = 0usize;
-        let p = unsafe { roche_get(self.raw, id, &mut len) };
+        let p = unsafe { kouten_get(self.raw, id, &mut len) };
         if p.is_null() {
             let err = Error::last();
             if err.message.contains("not found") || err.message.contains("key not found") {
@@ -829,10 +940,10 @@ impl RocheDb {
         Ok(Some(unsafe { take_buffer(p, len) }))
     }
 
-    pub fn get_encoded(&self, id: RocheId) -> Result<Option<EncodedPayload>, Error> {
+    pub fn get_encoded(&self, id: KoutenId) -> Result<Option<EncodedPayload>, Error> {
         let mut len = 0usize;
-        let mut codec = ROCHE_CODEC_RAW;
-        let p = unsafe { roche_get_codec(self.raw, id, &mut len, &mut codec) };
+        let mut codec = KOUTEN_CODEC_RAW;
+        let p = unsafe { kouten_get_codec(self.raw, id, &mut len, &mut codec) };
         if p.is_null() {
             let err = Error::last();
             if err.message.contains("not found") || err.message.contains("key not found") {
@@ -846,20 +957,20 @@ impl RocheDb {
         }))
     }
 
-    pub fn get_string(&self, id: RocheId) -> Result<Option<String>, Error> {
+    pub fn get_string(&self, id: KoutenId) -> Result<Option<String>, Error> {
         self.get(id)?
             .map(String::from_utf8)
             .transpose()
             .map_err(|e| Error::new(ErrorKind::Utf8, e.to_string()))
     }
 
-    pub fn batch_get(&self, ids: &[RocheId]) -> Result<Vec<Vec<u8>>, Error> {
+    pub fn batch_get(&self, ids: &[KoutenId]) -> Result<Vec<Vec<u8>>, Error> {
         let ptr = if ids.is_empty() {
             ptr::null()
         } else {
             ids.as_ptr()
         };
-        let r = unsafe { roche_batch_get(self.raw, ptr, ids.len()) };
+        let r = unsafe { kouten_batch_get(self.raw, ptr, ids.len()) };
         if r.is_null() {
             return Err(Error::last());
         }
@@ -874,23 +985,23 @@ impl RocheDb {
                 };
                 out.push(bytes);
             }
-            roche_batch_get_free(r);
+            kouten_batch_get_free(r);
             out
         };
         Ok(result)
     }
 
-    pub fn query(&self, id: RocheId, selection: &str) -> Result<Vec<u8>, Error> {
+    pub fn query(&self, id: KoutenId, selection: &str) -> Result<Vec<u8>, Error> {
         let selection = CString::new(selection)?;
         let mut len = 0usize;
-        let p = unsafe { roche_query(self.raw, id, selection.as_ptr(), &mut len) };
+        let p = unsafe { kouten_query(self.raw, id, selection.as_ptr(), &mut len) };
         if p.is_null() {
             return Err(Error::last());
         }
         Ok(unsafe { take_buffer(p, len) })
     }
 
-    pub fn query_string(&self, id: RocheId, selection: &str) -> Result<String, Error> {
+    pub fn query_string(&self, id: KoutenId, selection: &str) -> Result<String, Error> {
         String::from_utf8(self.query(id, selection)?)
             .map_err(|e| Error::new(ErrorKind::Utf8, e.to_string()))
     }
@@ -903,7 +1014,7 @@ impl RocheDb {
         let sort_field = opt_cstring(options.sort_field.as_deref())?;
         let mut len = 0usize;
         let p = unsafe {
-            roche_read_ring_json(
+            kouten_read_ring_json(
                 self.raw,
                 ring.as_ptr(),
                 opt_ptr(&filter_json),
@@ -940,7 +1051,7 @@ impl RocheDb {
             vec.as_ptr()
         };
         let r = unsafe {
-            roche_retrieve(
+            kouten_retrieve(
                 self.raw,
                 vec_ptr,
                 vec.len(),
@@ -979,7 +1090,7 @@ impl RocheDb {
                 fanout_nodes: raw.fanout_nodes,
                 candidate_reduction: raw.candidate_reduction,
             };
-            roche_retrieve_free(r);
+            kouten_retrieve_free(r);
             RetrieveResult { hits, stats }
         };
         Ok(result)
@@ -1011,7 +1122,7 @@ impl RocheDb {
             vec.as_ptr()
         };
         let mut len = 0usize;
-        let p = unsafe { roche_atlas(self.raw, vec_ptr, vec.len(), max_centroid_dims, &mut len) };
+        let p = unsafe { kouten_atlas(self.raw, vec_ptr, vec.len(), max_centroid_dims, &mut len) };
         if p.is_null() {
             return Err(Error::last());
         }
@@ -1019,8 +1130,8 @@ impl RocheDb {
         String::from_utf8(bytes).map_err(|e| Error::new(ErrorKind::Utf8, e.to_string()))
     }
 
-    pub fn locate(&self, id: RocheId, at: Option<f64>) -> Result<i32, Error> {
-        let node = unsafe { roche_locate(self.raw, id, at.unwrap_or(-1.0)) };
+    pub fn locate(&self, id: KoutenId, at: Option<f64>) -> Result<i32, Error> {
+        let node = unsafe { kouten_locate(self.raw, id, at.unwrap_or(-1.0)) };
         if node < 0 {
             Err(Error::last())
         } else {
@@ -1028,8 +1139,8 @@ impl RocheDb {
         }
     }
 
-    pub fn next_visit(&self, id: RocheId, node: i32) -> Result<f64, Error> {
-        let t = unsafe { roche_next_visit(self.raw, id, node) };
+    pub fn next_visit(&self, id: KoutenId, node: i32) -> Result<f64, Error> {
+        let t = unsafe { kouten_next_visit(self.raw, id, node) };
         if t < 0.0 {
             Err(Error::last())
         } else {
@@ -1037,8 +1148,8 @@ impl RocheDb {
         }
     }
 
-    pub fn next_join(&self, a: RocheId, b: RocheId) -> Result<Option<f64>, Error> {
-        let t = unsafe { roche_next_join(self.raw, a, b) };
+    pub fn next_join(&self, a: KoutenId, b: KoutenId) -> Result<Option<f64>, Error> {
+        let t = unsafe { kouten_next_join(self.raw, a, b) };
         if t < 0.0 {
             Ok(None)
         } else {
@@ -1047,7 +1158,7 @@ impl RocheDb {
     }
 
     fn check(&self, rc: c_int) -> Result<(), Error> {
-        if rc == ROCHE_OK {
+        if rc == KOUTEN_OK {
             Ok(())
         } else {
             Err(Error::last())
@@ -1055,24 +1166,24 @@ impl RocheDb {
     }
 }
 
-impl Drop for RocheDb {
+impl Drop for KoutenDb {
     fn drop(&mut self) {
         if !self.raw.is_null() {
-            unsafe { roche_close(self.raw) };
+            unsafe { kouten_close(self.raw) };
             self.raw = ptr::null_mut();
         }
     }
 }
 
 fn init() -> Result<(), Error> {
-    INIT.call_once(|| unsafe { roche_init() });
-    let version = unsafe { roche_abi_version() };
-    if version != ROCHE_ABI_VERSION {
+    INIT.call_once(|| unsafe { kouten_init() });
+    let version = unsafe { kouten_abi_version() };
+    if version != KOUTEN_ABI_VERSION {
         Err(Error::new(
             ErrorKind::AbiVersionMismatch,
             format!(
-                "RocheDB ABI version mismatch: expected {}, got {}",
-                ROCHE_ABI_VERSION, version
+                "KoutenDB ABI version mismatch: expected {}, got {}",
+                KOUTEN_ABI_VERSION, version
             ),
         ))
     } else {
@@ -1097,19 +1208,19 @@ where
     let raw = parts.next().ok_or_else(|| {
         Error::new(
             ErrorKind::InvalidId,
-            format!("invalid RocheDB id: missing {}", name),
+            format!("invalid KoutenDB id: missing {}", name),
         )
     })?;
     raw.parse::<T>().map_err(|e| {
         Error::new(
             ErrorKind::InvalidId,
-            format!("invalid RocheDB id field '{}': {}", name, e),
+            format!("invalid KoutenDB id field '{}': {}", name, e),
         )
     })
 }
 
-fn empty_id() -> RocheId {
-    RocheId {
+fn empty_id() -> KoutenId {
+    KoutenId {
         parent: 0,
         epoch: 0,
         seq: 0,
@@ -1127,7 +1238,7 @@ fn opt_ptr(value: &Option<CString>) -> *const c_char {
 
 unsafe fn take_buffer(p: *mut c_void, len: usize) -> Vec<u8> {
     let bytes = slice::from_raw_parts(p as *const u8, len).to_vec();
-    roche_free(p);
+    kouten_free(p);
     bytes
 }
 
@@ -1137,7 +1248,7 @@ mod tests {
 
     #[test]
     fn embedded_roundtrip_retrieve_and_atlas() {
-        let db = RocheDb::open_default().unwrap();
+        let db = KoutenDb::open_default().unwrap();
         db.set_galaxy_description("Rust test galaxy").unwrap();
         db.set_ring_description("docs/rust", "Rust driver documents")
             .unwrap();
@@ -1153,7 +1264,7 @@ mod tests {
             .unwrap();
         assert!(!id.is_empty());
         assert!(id.to_string().contains(':'));
-        assert_eq!(RocheId::parse(&id.to_string()).unwrap(), id);
+        assert_eq!(KoutenId::parse(&id.to_string()).unwrap(), id);
         assert_eq!(db.get(id).unwrap().unwrap(), payload);
         let encoded = db.get_encoded(id).unwrap().unwrap();
         assert_eq!(encoded.codec, PayloadCodec::Json);
@@ -1236,24 +1347,56 @@ mod tests {
 
     #[test]
     fn errors_include_c_abi_message() {
-        let db = RocheDb::open(8).unwrap();
+        let db = KoutenDb::open(8).unwrap();
         let err = db.put("bad\0ring", b"x").unwrap_err();
         assert_eq!(err.kind(), ErrorKind::NulByte);
         assert!(err.to_string().contains("nul byte"));
     }
 
     #[test]
-    fn id_parse_reports_invalid_input() {
-        let parsed = RocheId::parse("1:2:3:4.5").unwrap();
-        assert_eq!(parsed, RocheId::new(1, 2, 3, 4.5));
-        assert_eq!(parsed.to_string(), "1:2:3:4.5");
-        assert_eq!("1:2:3:4.5".parse::<RocheId>().unwrap(), parsed);
+    fn tls_builders_imply_tls_and_keep_verification_separate() {
+        let plain = ConnectOptions::new("127.0.0.1:7000");
+        assert!(!plain.tls);
+        assert!(!plain.tls_insecure_skip_verify);
 
-        let err = RocheId::parse("1:2:3").unwrap_err();
+        let ca = ConnectOptions::new("127.0.0.1:7000").tls_ca_file("/etc/kouten/ca.pem");
+        assert!(ca.tls);
+        assert_eq!(ca.tls_ca_file.as_deref(), Some("/etc/kouten/ca.pem"));
+        assert!(!ca.tls_insecure_skip_verify);
+
+        let named = ConnectOptions::new("127.0.0.1:7000").tls_server_name("kouten.internal");
+        assert!(named.tls);
+        assert!(!named.tls_insecure_skip_verify);
+
+        let insecure = ConnectOptions::new("127.0.0.1:7000").danger_accept_invalid_certs();
+        assert!(insecure.tls);
+        assert!(insecure.tls_insecure_skip_verify);
+    }
+
+    // `connect` only builds the client; the socket is opened on first use, so
+    // the TLS handshake can only fail once an operation runs.
+    #[test]
+    fn tls_connect_defers_failure_to_first_operation() {
+        let db = ConnectOptions::new("127.0.0.1:1")
+            .tls_ca_file("/nonexistent/ca.pem")
+            .connect()
+            .expect("connect is lazy and should not dial a peer");
+        let err = db.put_str("docs/rust", "unreachable").unwrap_err();
+        assert!(!err.to_string().is_empty());
+    }
+
+    #[test]
+    fn id_parse_reports_invalid_input() {
+        let parsed = KoutenId::parse("1:2:3:4.5").unwrap();
+        assert_eq!(parsed, KoutenId::new(1, 2, 3, 4.5));
+        assert_eq!(parsed.to_string(), "1:2:3:4.5");
+        assert_eq!("1:2:3:4.5".parse::<KoutenId>().unwrap(), parsed);
+
+        let err = KoutenId::parse("1:2:3").unwrap_err();
         assert_eq!(err.kind(), ErrorKind::InvalidId);
         assert!(err.message().contains("missing"));
 
-        let err = RocheId::parse("1:2:3:4:5").unwrap_err();
+        let err = KoutenId::parse("1:2:3:4:5").unwrap_err();
         assert_eq!(err.kind(), ErrorKind::InvalidId);
         assert!(err.message().contains("too many"));
     }
@@ -1262,7 +1405,7 @@ mod tests {
     fn open_dir_reopens_persisted_data() {
         let mut dir = std::env::temp_dir();
         dir.push(format!(
-            "rochedb-rust-test-{}-{}",
+            "koutendb-rust-test-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1272,12 +1415,12 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
 
         let id = {
-            let db = RocheDb::open_dir(4, dir.to_str().unwrap()).unwrap();
+            let db = KoutenDb::open_dir(4, dir.to_str().unwrap()).unwrap();
             db.put_str("persist/rust", "persistent rust payload")
                 .unwrap()
         };
 
-        let db = RocheDb::open_dir(4, dir.to_str().unwrap()).unwrap();
+        let db = KoutenDb::open_dir(4, dir.to_str().unwrap()).unwrap();
         assert_eq!(
             db.get_string(id).unwrap().unwrap(),
             "persistent rust payload"

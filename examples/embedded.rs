@@ -1,7 +1,7 @@
-use rochedb::{ReadRingOptions, RetrieveOptions, RocheDb};
+use koutendb::{ReadRingOptions, RetrieveOptions, KoutenDb};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let db = RocheDb::open_default()?;
+    let db = KoutenDb::open_default()?;
     db.set_galaxy_description("Example knowledge base")?;
     db.set_ring_description("docs/rust", "Rust driver documents")?;
 

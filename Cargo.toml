@@ -1,19 +1,19 @@
 [package]
-name = "rochedb"
-version = "0.1.4"
+name = "koutendb"
+version = "0.1.5"
 edition = "2021"
 license = "Apache-2.0"
-description = "Rust driver for RocheDB"
-repository = "https://github.com/puffball1567/rochedb-rust"
-homepage = "https://github.com/puffball1567/rochedb"
-documentation = "https://puffball1567.github.io/rochedb/"
+description = "Rust driver for KoutenDB"
+repository = "https://github.com/puffball1567/koutendb-rust"
+homepage = "https://github.com/puffball1567/koutendb"
+documentation = "https://puffball1567.github.io/koutendb/"
 readme = "README.md"
-keywords = ["database", "nosql", "vector", "ffi", "rochedb"]
+keywords = ["database", "nosql", "vector", "ffi", "koutendb"]
 categories = ["api-bindings", "database"]
 build = "build.rs"
 
 [lib]
-name = "rochedb"
+name = "koutendb"
 path = "src/lib.rs"
 
 [dependencies]
