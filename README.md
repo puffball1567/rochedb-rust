@@ -6,8 +6,8 @@ This crate currently wraps the KoutenDB C ABI. It gives Rust applications a safe
 embedded API while KoutenDB keeps placement, ring metadata, retrieval planning,
 and ID generation inside the database core.
 
-Current driver version: `v0.1.4`.
-Tested against KoutenDB core `v0.3.0+` / C ABI v2.
+Current driver version: `v0.1.5`.
+Tested against KoutenDB core C ABI v2.
 
 ## Install
 
@@ -92,13 +92,10 @@ KOUTENDB_CORE_DIR=/path/to/koutendb cargo run --example embedded
 
 ## TLS
 
-TLS requires a KoutenDB core built with `-d:ssl`. The shared library that ships
-from `scripts/driver_compat.sh` is built without it, so a TLS connect fails with
-`TLS support requires building KoutenDB with -d:ssl` until you rebuild it:
-
-```bash
-nim c --app:lib -d:ssl -d:release -o:lib/libkoutendb.so src/koutendb_capi.nim
-```
+TLS requires a KoutenDB core built with `-d:ssl`. The core's
+`scripts/build_capi.sh` builds the shared library with it by default. A library
+built without `-d:ssl` fails a TLS connect with
+`TLS support requires building KoutenDB with -d:ssl`.
 
 To reach a server whose certificate is signed by a private CA — or is
 self-signed — point at the certificate PEM. Verification stays on:
